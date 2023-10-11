@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 use halo2_proofs::{arithmetic::FieldExt, circuit::*, plonk::*, poly::Rotation, dev::MockProver, pasta::Fp};
 
-
 #[derive(Debug, Clone)]
 struct MyConfig{
     pub advice: [Column<Advice>; 3],
@@ -55,18 +54,21 @@ impl<F:FieldExt> MyChip<F> {
         MyConfig { advice: ([col_a, col_b, col_c]), selector: ([selector_1, selector_2]) }
     }
 
-    fn assign_first_row(&self, mut layouter: impl Layouter<F>, commit: &Option<F>, witness: &Option<F>) 
+    fn assign(&self, mut layouter: impl Layouter<F>, commit: &Vec<Option<F>>, witness: &Option<F>) 
     -> Result<AssignedCell<F, F>, Error> {
         layouter.assign_region(
-            || "select first row",
+            || "select",
             |mut region| {
+
+                let mut c_cell: AssignedCell<F, F>; 
+
                 self.config.selector[0].enable(&mut region, 0)?;
 
                 region.assign_advice(
                     || "a",
                     self.config.advice[0],
                     0,
-                    || commit.ok_or(Error::Synthesis)
+                    || commit[0].ok_or(Error::Synthesis)
                 )?;
 
                 region.assign_advice(
@@ -75,26 +77,14 @@ impl<F:FieldExt> MyChip<F> {
                     0,
                     || witness.ok_or(Error::Synthesis),
                 )?;
-                let c_val = commit.and_then(|commit| witness.map(|witness| commit - witness));
-                let c_cell = region.assign_advice(
+                let c_val = commit[0].and_then(|commit| witness.map(|witness| commit - witness));
+                c_cell = region.assign_advice(
                     || "a-b",
                     self.config.advice[2],
                     0,
                     || c_val.ok_or(Error::Synthesis),
                 )?;
 
-                Ok(c_cell)
-            },
-        )
-    }
-
-    fn assign_next_row(&self, mut layouter: impl Layouter<F>, commit: &Vec<Option<F>>, witness: &Option<F>, prev_d: &AssignedCell<F, F>) 
-    -> Result<AssignedCell<F, F>, Error> {
-        layouter.assign_region(
-            || "select other rows",
-            |mut region| {
-                // self.config.selector[0].enable(&mut region, 0)?;
-                let mut c_cell: AssignedCell<F, F> = prev_d.clone(); 
                 for row in 1..8
                 {
                     self.config.selector[1].enable(&mut region, row)?;
@@ -115,7 +105,7 @@ impl<F:FieldExt> MyChip<F> {
 
                     let sub = commit[row].and_then(|c| witness.map(|w| c - w));
                     
-                    let c_val = prev_d.value().and_then(|d| sub.map(|c| *d * c));
+                    let c_val = c_cell.value().and_then(|d| sub.map(|c| *d * c));
 
                     c_cell = region.assign_advice(
                         || "product",
@@ -125,19 +115,13 @@ impl<F:FieldExt> MyChip<F> {
                     )?;
                 }
 
+                // region.constrain_constant(c_cell.cell(), F::ZERO)?;
+
                 Ok(c_cell)
             },
         )
     }
 
-    // pub fn expose_public(
-    //     &self,
-    //     mut layouter: impl Layouter<F>,
-    //     cell: &AssignedCell<F, F>,
-    //     row: usize,
-    // ) -> Result<(), Error> {
-    //     layouter.constrain_constant(cell.cell(), F::ZERO)
-    // }
 }
 
 #[derive(Default)]
@@ -160,11 +144,7 @@ impl<F:FieldExt> Circuit<F> for MyCircuit<F> {
 
     fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
         let chip = MyChip::construct(config);
-        let prev_c = chip.assign_first_row(layouter.namespace(|| "select first row"), &self.commits[0], &self.witness)?;
-
-        let c_cell = chip.assign_next_row(layouter.namespace(|| "select next rows"), &self.commits, &self.witness, &prev_c)?;
-
-        // chip.expose_public(layouter.namespace(|| "out"), &prev_d, 8)?;
+        let c_cell = chip.assign(layouter.namespace(|| "select next rows"), &self.commits, &self.witness)?;
     
         Ok(())
     }
@@ -181,6 +161,4 @@ fn main() {
 
     let prover = MockProver::run(k, &circuit, vec![]).unwrap();
     prover.assert_satisfied();
-
-    // let _prover = MockProver::run(k, &circuit, vec![]).unwrap();
 }
