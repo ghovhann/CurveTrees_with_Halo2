@@ -5,6 +5,7 @@ use halo2_proofs::{arithmetic::FieldExt, circuit::*, plonk::*, poly::Rotation, d
 struct MyConfig{
     pub advice: [Column<Advice>; 3],
     pub selector: [Selector; 2],
+    pub instance: Column<Instance>,
 }
 
 struct MyChip<F:FieldExt> {
@@ -17,7 +18,7 @@ impl<F:FieldExt> MyChip<F> {
         Self{config, _marker: PhantomData}
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> MyConfig {
+    fn configure(meta: &mut ConstraintSystem<F>, instance: Column<Instance>) -> MyConfig {
         let col_a = meta.advice_column();
         let col_b = meta.advice_column();
         let col_c = meta.advice_column();
@@ -25,6 +26,7 @@ impl<F:FieldExt> MyChip<F> {
         let selector_2 = meta.selector();
 
         meta.enable_equality(col_c);
+        meta.enable_equality(instance);
 
         meta.create_gate("subtract", |meta|{
             let s = meta.query_selector(selector_1);
@@ -51,7 +53,7 @@ impl<F:FieldExt> MyChip<F> {
             vec![s*(b_prev - b)]
         });
 
-        MyConfig { advice: ([col_a, col_b, col_c]), selector: ([selector_1, selector_2]) }
+        MyConfig { advice: ([col_a, col_b, col_c]), selector: ([selector_1, selector_2]), instance }
     }
 
     fn assign(&self, mut layouter: impl Layouter<F>, commit: &Vec<Option<F>>, witness: &Option<F>) 
@@ -122,6 +124,14 @@ impl<F:FieldExt> MyChip<F> {
         )
     }
 
+    pub fn expose_public(
+        &self,
+        mut layouter: impl Layouter<F>,
+        cell: AssignedCell<F, F>,
+        row: usize,
+    ) -> Result<(), Error> {
+        layouter.constrain_instance(cell.cell(), self.config.instance, row)
+    }
 }
 
 #[derive(Default)]
@@ -139,13 +149,16 @@ impl<F:FieldExt> Circuit<F> for MyCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        MyChip::configure(meta)
+        let instance = meta.instance_column();
+        MyChip::configure(meta, instance)
     }
 
     fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
         let chip = MyChip::construct(config);
         let c_cell = chip.assign(layouter.namespace(|| "select next rows"), &self.commits, &self.witness)?;
     
+        chip.expose_public(layouter.namespace(|| "zero check"), c_cell, 0)?;
+
         Ok(())
     }
 }
@@ -158,7 +171,9 @@ fn main() {
         commits: commitments,
         witness: witness,
     };
+    
+    let public_input = vec![Fp::from(0)];
 
-    let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+    let prover = MockProver::run(k, &circuit, vec![public_input.clone()]).unwrap();
     prover.assert_satisfied();
 }
