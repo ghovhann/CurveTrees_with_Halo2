@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
-use halo2_proofs::{arithmetic::FieldExt, circuit::*, plonk::*, poly::Rotation, dev::MockProver, pasta::Fp};
+use halo2_proofs::{arithmetic::{FieldExt, Field}, circuit::*, plonk::*, poly::Rotation, dev::MockProver, pasta::Fp};
+use std::time::{Instant};
 
 #[derive(Debug, Clone)]
 struct MyConfig{
@@ -19,6 +20,7 @@ impl<F:FieldExt> MyChip<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>, instance: Column<Instance>) -> MyConfig {
+
         let col_a = meta.advice_column();
         let col_b = meta.advice_column();
         let col_c = meta.advice_column();
@@ -56,7 +58,7 @@ impl<F:FieldExt> MyChip<F> {
         MyConfig { advice: ([col_a, col_b, col_c]), selector: ([selector_1, selector_2]), instance }
     }
 
-    fn assign(&self, mut layouter: impl Layouter<F>, commit: &Vec<Option<F>>, witness: &Option<F>) 
+    fn assign(&self, mut layouter: impl Layouter<F>, commit: &Vec<Option<F>>, witness: &Option<F>, num_rows: usize) 
     -> Result<AssignedCell<F, F>, Error> {
         layouter.assign_region(
             || "select",
@@ -87,7 +89,7 @@ impl<F:FieldExt> MyChip<F> {
                     || c_val.ok_or(Error::Synthesis),
                 )?;
 
-                for row in 1..8
+                for row in 1..num_rows
                 {
                     self.config.selector[1].enable(&mut region, row)?;
 
@@ -116,8 +118,6 @@ impl<F:FieldExt> MyChip<F> {
                         || c_val.ok_or(Error::Synthesis),
                     )?;
                 }
-
-                // region.constrain_constant(c_cell.cell(), F::ZERO)?;
 
                 Ok(c_cell)
             },
@@ -155,7 +155,8 @@ impl<F:FieldExt> Circuit<F> for MyCircuit<F> {
 
     fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
         let chip = MyChip::construct(config);
-        let c_cell = chip.assign(layouter.namespace(|| "select next rows"), &self.commits, &self.witness)?;
+        let iterations = 1 << 15;
+        let c_cell = chip.assign(layouter.namespace(|| "select"), &self.commits, &self.witness, iterations)?;
     
         chip.expose_public(layouter.namespace(|| "zero check"), c_cell, 0)?;
 
@@ -163,10 +164,21 @@ impl<F:FieldExt> Circuit<F> for MyCircuit<F> {
     }
 }
 fn main() {
-    let k = 4;
+    let k = 16;
 
-    let commitments: Vec<Option<Fp>> = vec![Some(Fp::from(1)), Some(Fp::from(2)), Some(Fp::from(3)), Some(Fp::from(4)), Some(Fp::from(5)), Some(Fp::from(6)), Some(Fp::from(7)), Some(Fp::from(8))];
-    let witness = Some(Fp::from(5));
+    let iterations = 1 << k-1; 
+    let mut commitments: Vec<Option<Fp>> = Vec::with_capacity(iterations);
+
+
+    for i in 0..iterations {
+        // Your loop body code here
+        let element = i as u64;
+        commitments.push(Some(Fp::from(element)));
+
+    }
+
+    let witness = commitments[30].clone();
+
     let circuit = MyCircuit{
         commits: commitments,
         witness: witness,
@@ -174,6 +186,15 @@ fn main() {
     
     let public_input = vec![Fp::from(0)];
 
+    let start_time = Instant::now();
     let prover = MockProver::run(k, &circuit, vec![public_input.clone()]).unwrap();
+    let end_time = Instant::now();
+    let elapsed_time = end_time.duration_since(start_time);
+    println!("Elapsed prover time: {:?}ms", elapsed_time.as_millis());
+
+    let start_time = Instant::now();
     prover.assert_satisfied();
+    let end_time = Instant::now();
+    let elapsed_time = end_time.duration_since(start_time);
+    println!("Elapsed verifier time: {:?}ms", elapsed_time.as_millis());
 }
