@@ -405,7 +405,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         }
 
-        let witness = commitments[2].clone();
+        let witness = commitments[0].clone();
 
         let circuit = MyCircuit{
             commits: commitments,
@@ -430,8 +430,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         let data_ref: &[&[&[Fp]]] = &[&[&[value]]];  
         // assert!(verify_proof(params, vk, strategy, data_ref, &mut transcript).is_ok());
         match verify_proof(params, vk, strategy, data_ref, &mut transcript) {
-            Ok(_) => {
-                println!("Verification passed");
+            Ok(msg) => {
+                println!("Verification passed {:?}", msg);
             }
             Err(err) => {
                 println!("Some other Error {:?} ", err);
