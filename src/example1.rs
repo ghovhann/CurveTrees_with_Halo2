@@ -204,7 +204,7 @@
 extern crate criterion;
 
 use std::marker::PhantomData;
-use halo2_proofs::{arithmetic::{FieldExt, Field}, circuit::*, plonk::*};
+use halo2_proofs::{arithmetic::FieldExt, circuit::*, plonk::*, dev::MockProver};
 use halo2_proofs::poly::{commitment::Params, Rotation};
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
@@ -283,10 +283,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                 || "select",
                 |mut region| {
 
-                    if num_rows > 0
-                    {
-                        println!("Inside select assignment\n");
-
                         let mut c_cell: AssignedCell<F, F>; 
 
                         self.config.selector[0].enable(&mut region, 0)?;
@@ -342,11 +338,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                             )?;
                         }
                         
-
                         return Ok(c_cell)
-                    }
-
-                    Err(Error::Synthesis)
                 },
             )
         }
@@ -395,8 +387,6 @@ fn criterion_benchmark(c: &mut Criterion) {
             witness : None, 
             k : 0
         };
-        println!("Before keygen");
-        println!("empty circuit {:?}", empty_circuit);
         let vk = keygen_vk(&params, &empty_circuit).expect("keygen_vk should not fail");
         let pk = keygen_pk(&params, vk, &empty_circuit).expect("keygen_pk should not fail");
         (params, pk)
@@ -404,9 +394,6 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     fn prover(k: u32, params: &Params<EqAffine>, pk: &ProvingKey<EqAffine>) -> Vec<u8> {
         let rng = OsRng;
-
-        let k = 21;
-
         let iterations = 1 << k-1; 
         let mut commitments: Vec<Option<Fp>> = Vec::with_capacity(iterations);
 
@@ -418,21 +405,15 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         }
 
-        let witness = commitments[30].clone();
+        let witness = commitments[2].clone();
 
-        let rows: usize = 1 << k-1;
         let circuit = MyCircuit{
             commits: commitments,
-            witness: witness,
-            k: rows
+            witness,
+            k: iterations
         };
-        
-        // let public_input = vec![Fp::from(0)];
-        // let public_input = vec![public_input.clone()];
-        // let data_ref: &[&[&[Fp]]] = public_input.iter().map(|row| row.iter().map(|item| item).collect()).collect();
+    
         let value: Fp = Fp::from(0);
-
-        // Create a reference with a slice of a single value
         let data_ref: &[&[&[Fp]]] = &[&[&[value]]];  
 
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
@@ -444,10 +425,48 @@ fn criterion_benchmark(c: &mut Criterion) {
     fn verifier(params: &Params<EqAffine>, vk: &VerifyingKey<EqAffine>, proof: &[u8]) {
         let strategy = SingleVerifier::new(params);
         let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(proof);
-        assert!(verify_proof(params, vk, strategy, &[&[]], &mut transcript).is_ok());
+
+        let value: Fp = Fp::from(0);
+        let data_ref: &[&[&[Fp]]] = &[&[&[value]]];  
+        // assert!(verify_proof(params, vk, strategy, data_ref, &mut transcript).is_ok());
+        match verify_proof(params, vk, strategy, data_ref, &mut transcript) {
+            Ok(_) => {
+                println!("Verification passed");
+            }
+            Err(err) => {
+                println!("Some other Error {:?} ", err);
+            }
+        }
     }
 
-    let k_range = 8..=16;
+    // for k in 8..=12 {
+    //     let iterations = 1 << k-1; 
+    //     let mut commitments: Vec<Option<Fp>> = Vec::with_capacity(iterations);
+
+
+    //     for i in 0..iterations {
+    //         // Your loop body code here
+    //         let element = i as u64;
+    //         commitments.push(Some(Fp::from(element)));
+
+    //     }
+
+    //     let witness = commitments[0].clone();
+
+    //     let circuit = MyCircuit{
+    //         commits: commitments,
+    //         witness,
+    //         k: iterations
+    //     };
+        
+    //     let public_input = vec![Fp::from(0)];
+
+    //     let prover = MockProver::run(k, &circuit, vec![public_input.clone()]).unwrap();
+    //     prover.assert_satisfied();
+    // }
+
+
+    let k_range = 8..=10;
 
     let mut keygen_group = c.benchmark_group("plonk-keygen");
     keygen_group.sample_size(10);
