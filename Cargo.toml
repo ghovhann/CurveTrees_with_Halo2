@@ -7,9 +7,11 @@ edition = "2021"
 
 [[bin]]
 name = "example1"
-path = "src/example1.rs"
+path = "src/test.rs"
 
 [dependencies]
 halo2_proofs = "0.1.0"
 criterion = "0.3"
 rand_core = { version = "0.6", features = ["getrandom"] }
+plotters = { version = "0.3.0"}
+
