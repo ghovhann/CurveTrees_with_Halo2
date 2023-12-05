@@ -15,7 +15,7 @@ use std::time::Instant;
 mod permissible;
 mod select;
 
-//use permissible::*;
+use permissible::*;
 use select::*;
 
 /// This represents an advice column at a certain row in the ConstraintSystem
@@ -23,7 +23,8 @@ use select::*;
 struct MyConfig {
     pub advice: [Column<Advice>; 4],
     pub selector: [Selector; 3],
-    //pub select: SelectConfig,
+    pub select: SelectConfig,
+    pub permisable: PrmsConfig,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -77,54 +78,67 @@ impl<F: Field> MyChip<F> {
         }
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> MyConfig {
-        let col_a = meta.advice_column();
-        let col_b = meta.advice_column();
-        let col_c = meta.advice_column();
-        let col_d = meta.advice_column();
-        let selector_1 = meta.selector();
-        let selector_2 = meta.selector();
-        let selector_3 = meta.selector();
-        let constant = meta.fixed_column();
+    fn configure(
+        meta: &mut ConstraintSystem<F>,
+        advice: [Column<Advice>; 4],
+        selector: [Selector; 3],
+    ) -> MyConfig {
+        let select_config = SelectChip::configure(meta);
+        let prms_config = PrmsChip::configure(meta);
+        // let col_a = meta.advice_column();
+        // let col_b = meta.advice_column();
+        // let col_c = meta.advice_column();
+        // let col_d = meta.advice_column();
+        // let selector_1 = meta.selector();
+        // let selector_2 = meta.selector();
+        // let selector_3 = meta.selector();
+        // let constant = meta.fixed_column();
 
-        meta.enable_equality(col_c);
-        meta.enable_constant(constant);
+        // meta.enable_equality(col_c);
+        // meta.enable_constant(constant);
 
-        meta.create_gate("subtract", |meta| {
-            let s = meta.query_selector(selector_1);
-            let a = meta.query_advice(col_a, Rotation::cur());
-            let b = meta.query_advice(col_b, Rotation::cur());
-            let c = meta.query_advice(col_c, Rotation::cur());
-            vec![s * (a - b - c)]
-        });
+        // meta.create_gate("subtract", |meta| {
+        //     let s = meta.query_selector(selector_1);
+        //     let a = meta.query_advice(col_a, Rotation::cur());
+        //     let b = meta.query_advice(col_b, Rotation::cur());
+        //     let c = meta.query_advice(col_c, Rotation::cur());
+        //     vec![s * (a - b - c)]
+        // });
 
-        meta.create_gate("running product", |meta| {
-            let s = meta.query_selector(selector_2);
-            let a = meta.query_advice(col_a, Rotation::cur());
-            let b = meta.query_advice(col_b, Rotation::cur());
-            let c = meta.query_advice(col_c, Rotation::cur());
-            let c_prev = meta.query_advice(col_c, Rotation::prev());
-            let sub = a - b;
-            vec![s * (c_prev * sub - c)]
-        });
+        // meta.create_gate("running product", |meta| {
+        //     let s = meta.query_selector(selector_2);
+        //     let a = meta.query_advice(col_a, Rotation::cur());
+        //     let b = meta.query_advice(col_b, Rotation::cur());
+        //     let c = meta.query_advice(col_c, Rotation::cur());
+        //     let c_prev = meta.query_advice(col_c, Rotation::prev());
+        //     let sub = a - b;
+        //     vec![s * (c_prev * sub - c)]
+        // });
 
-        meta.create_gate("constant column", |meta| {
-            let s = meta.query_selector(selector_2);
-            let b = meta.query_advice(col_b, Rotation::cur());
-            let b_prev = meta.query_advice(col_b, Rotation::prev());
-            vec![s * (b_prev - b)]
-        });
+        // meta.create_gate("constant column", |meta| {
+        //     let s = meta.query_selector(selector_2);
+        //     let b = meta.query_advice(col_b, Rotation::cur());
+        //     let b_prev = meta.query_advice(col_b, Rotation::prev());
+        //     vec![s * (b_prev - b)]
+        // });
 
-        meta.create_gate("is permissible", |meta| {
-            let s = meta.query_selector(selector_3);
-            let d = meta.query_advice(col_d, Rotation::cur());
-            let b = meta.query_advice(col_b, Rotation::cur());
-            vec![s * (d.clone() * d.clone() - b)]
-        });
+        // meta.create_gate("is permissible", |meta| {
+        //     let s = meta.query_selector(selector_3);
+        //     let d = meta.query_advice(col_d, Rotation::cur());
+        //     let b = meta.query_advice(col_b, Rotation::cur());
+        //     vec![s * (d.clone() * d.clone() - b)]
+        // });
+
+        // MyConfig {
+        //     advice: [col_a, col_b, col_c, col_d],
+        //     selector: ([selector_1, selector_2, selector_3]),
+        // }
 
         MyConfig {
-            advice: [col_a, col_b, col_c, col_d],
-            selector: ([selector_1, selector_2, selector_3]),
+            advice,
+            selector,
+            select: select_config,
+            permisable: prms_config,
         }
     }
 

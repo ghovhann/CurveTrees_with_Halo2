@@ -24,14 +24,14 @@ pub struct SelectChip<F: Field> {
 }
 
 impl<F: Field> SelectChip<F> {
-    fn construct(config: SelectConfig) -> Self {
+    pub fn construct(config: SelectConfig) -> Self {
         Self {
             config,
             _marker: PhantomData,
         }
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> SelectConfig {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> SelectConfig {
         let col_a = meta.advice_column();
         let col_b = meta.advice_column();
         let col_c = meta.advice_column();
@@ -73,7 +73,7 @@ impl<F: Field> SelectChip<F> {
         }
     }
 
-    fn assign(
+    pub fn assign(
         &self,
         mut layouter: impl Layouter<F>,
         commit: &Vec<Value<F>>,

@@ -15,20 +15,20 @@ pub struct PrmsConfig {
     pub advice: [Column<Advice>; 3], // add y column for (x,y) and check point on curve, alpha beta from transcript
     pub selector: Selector,
 }
-struct PrmsChip<F: Field> {
+pub struct PrmsChip<F: Field> {
     config: PrmsConfig,
     _marker: PhantomData<F>,
 }
 
 impl<F: Field> PrmsChip<F> {
-    fn construct(config: PrmsConfig) -> Self {
+    pub fn construct(config: PrmsConfig) -> Self {
         Self {
             config,
             _marker: PhantomData,
         }
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> PrmsConfig {
+    pub fn configure(meta: &mut ConstraintSystem<F>) -> PrmsConfig {
         let col_a = meta.advice_column();
         let col_b = meta.advice_column();
         let col_c = meta.advice_column();
@@ -59,7 +59,7 @@ impl<F: Field> PrmsChip<F> {
         }
     }
 
-    fn assign(
+    pub fn assign(
         &self,
         mut layouter: impl Layouter<F>,
         x: &Value<F>,
