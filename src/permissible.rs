@@ -28,10 +28,15 @@ impl<F: Field> PrmsChip<F> {
         }
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<F>) -> PrmsConfig {
-        let col_a = meta.advice_column();
-        let col_b = meta.advice_column();
-        let col_c = meta.advice_column();
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        advice_0: Column<Advice>,
+        advice_1: Column<Advice>,
+        advice_2: Column<Advice>,
+    ) -> PrmsConfig {
+        let col_a = advice_0;
+        let col_b = advice_1;
+        let col_c = advice_2;
         let selector_1 = meta.selector();
 
         meta.create_gate("is permissible", |meta| {
