@@ -1,9 +1,10 @@
 use ff::Field;
 //use halo2_gadgets::utilities::FieldValue;
-use halo2_proofs::pasta::{EqAffine, Fp};
+use halo2_proofs::pasta::{pallas, EqAffine, Fp};
 use halo2_proofs::plonk::{
-    create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Assigned, BatchVerifier, Circuit,
-    Column, ConstraintSystem, Error, Fixed, SingleVerifier, TableColumn, VerificationStrategy,
+    self, create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Assigned, BatchVerifier,
+    Circuit, Column, ConstraintSystem, Error, Fixed, SingleVerifier, TableColumn,
+    VerificationStrategy,
 };
 use halo2_proofs::poly::{commitment::Params, Rotation};
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
@@ -76,13 +77,13 @@ impl<F: Field> MyChip<F> {
         }
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> MyConfig {
+    fn configure(meta: &mut plonk::ConstraintSystem<pallas::Base>) -> MyConfig {
         let col_a = meta.advice_column();
         let col_b = meta.advice_column();
         let col_c = meta.advice_column();
         let col_d = meta.advice_column();
-        let select_config = SelectChip::configure(meta, col_a, col_b, col_c);
-        let prms_config = PrmsChip::configure(meta, col_a, col_b, col_d);
+        let select_config = SelectChip::configure(meta, vec![col_a, col_b, col_c]);
+        let prms_config = PrmsChip::<F>::configure(meta, vec![col_a, col_b, col_d]);
 
         MyConfig {
             select: select_config,

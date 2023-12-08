@@ -31,15 +31,10 @@ impl<F: Field> SelectChip<F> {
         }
     }
 
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        advice_0: Column<Advice>,
-        advice_1: Column<Advice>,
-        advice_2: Column<Advice>,
-    ) -> SelectConfig {
-        let col_a = advice_0;
-        let col_b = advice_1;
-        let col_c = advice_2;
+    pub fn configure(meta: &mut ConstraintSystem<F>, advice: Vec<Column<Advice>>) -> SelectConfig {
+        let col_a = advice[0];
+        let col_b = advice[1];
+        let col_c = advice[2];
         let selector_1 = meta.selector();
         let selector_2 = meta.selector();
         let constant = meta.fixed_column();

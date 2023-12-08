@@ -3,7 +3,7 @@ use ff::Field;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::pasta::{pallas, EqAffine, Fp};
 use halo2_proofs::plonk::{
-    Advice, Assigned, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn,
+    self, Advice, Assigned, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn,
 };
 use halo2_proofs::poly::{commitment::Params, Rotation};
 use halo2_proofs::{circuit::*, plonk::*};
@@ -29,14 +29,12 @@ impl<F: Field> PrmsChip<F> {
     }
 
     pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        advice_0: Column<Advice>,
-        advice_1: Column<Advice>,
-        advice_2: Column<Advice>,
+        meta: &mut plonk::ConstraintSystem<pallas::Base>,
+        advice: Vec<Column<Advice>>,
     ) -> PrmsConfig {
-        let col_a = advice_0;
-        let col_b = advice_1;
-        let col_c = advice_2;
+        let col_a = advice[0];
+        let col_b = advice[1];
+        let col_c = advice[2];
         let selector_1 = meta.selector();
 
         meta.create_gate("is permissible", |meta| {
