@@ -12,24 +12,22 @@ use std::marker::PhantomData;
 /// This represents an advice column at a certain row in the ConstraintSystem
 #[derive(Debug, Clone)]
 pub struct PrmsConfig {
-    pub advice: [Column<Advice>; 3], // add y column for (x,y) and check point on curve, alpha beta from transcript
+    pub advice: [Column<Advice>; 3],
     pub selector: Selector,
 }
-pub struct PrmsChip<F: Field> {
+pub struct PrmsChip{
     config: PrmsConfig,
-    _marker: PhantomData<F>,
 }
 
-impl<F: Field> PrmsChip<F> {
+impl PrmsChip {
     pub fn construct(config: PrmsConfig) -> Self {
         Self {
             config,
-            _marker: PhantomData,
         }
     }
 
     pub fn configure(
-        meta: &mut plonk::ConstraintSystem<pallas::Base>,
+        meta: &mut plonk::ConstraintSystem<Fp>,
         advice: Vec<Column<Advice>>,
     ) -> PrmsConfig {
         let col_a = advice[0];
@@ -64,34 +62,38 @@ impl<F: Field> PrmsChip<F> {
 
     pub fn assign(
         &self,
-        mut layouter: impl Layouter<F>,
-        x: &Value<F>,
-        y: &Value<F>,
-        y_sqrt: &Value<F>,
-    ) -> Result<AssignedCell<F, F>, Error> {
+        mut layouter: impl Layouter<Fp>,
+        x: &Value<Fp>,
+        y: &Value<Fp>,
+        y_sqrt: &Value<Fp>,
+    ) -> Result<AssignedCell<Fp, Fp>, Error> {
         layouter.assign_region(
             || "permissible",
             |mut region| {
                 self.config.selector.enable(&mut region, 0)?;
 
-                region.assign_advice(|| "a", self.config.advice[0], 0, || *x)?;
+                region.assign_advice(
+                || "a", 
+                self.config.advice[0], 
+                0, 
+                || *x)?;
 
-                region.assign_advice(|| "b", self.config.advice[1], 0, || *y)?;
+                region.assign_advice(
+                || "b", 
+                self.config.advice[1], 
+                0, 
+                || *y)?;
 
-                let y_sqrt: Value<Option<F>> = y.map(|v| v.sqrt().into());
-                let mut c_val: Value<F>;
-
-                if let Some(sqrt_value) = y_sqrt.into() {
-                    c_val = Value::from(sqrt_value);
-                } else {
-                    Err(Error::Synthesis);
-                }
-
-                let c_cell =
-                    region.assign_advice(|| "sqrt(y)", self.config.advice[2], 0, || c_val)?;
+                let c_cell = region.assign_advice(
+                || "sqrt(y)", 
+                self.config.advice[2], 
+                0, 
+                || *y_sqrt)?;
 
                 return Ok(c_cell);
             },
         )
     }
 }
+
+// fn make_permissible()

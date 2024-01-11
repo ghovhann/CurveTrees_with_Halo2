@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 //use halo2_gadgets::utilities::FieldValue;
 use halo2_proofs::poly::{commitment::Params, Rotation};
 use halo2_proofs::{circuit::*, plonk::*};
+use halo2_proofs::pasta::{pallas, EqAffine, Fp};
 //use halo2_proofs::pasta::{EqAffine, Fp};
 //use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
 //use rand_core::OsRng;
@@ -12,26 +13,23 @@ use halo2_proofs::plonk::{
     Column, ConstraintSystem, Error, Fixed, SingleVerifier, TableColumn, VerificationStrategy,
 };
 
-/// This represents an advice column at a certain row in the ConstraintSystem
 #[derive(Debug, Clone)]
 pub struct SelectConfig {
-    pub advice: [Column<Advice>; 3],
+    pub advice: [Column<Advice>; 3], //try select with more columns
     pub selector: [Selector; 2],
 }
-pub struct SelectChip<F: Field> {
+pub struct SelectChip {
     config: SelectConfig,
-    _marker: PhantomData<F>,
 }
 
-impl<F: Field> SelectChip<F> {
+impl SelectChip {
     pub fn construct(config: SelectConfig) -> Self {
         Self {
             config,
-            _marker: PhantomData,
         }
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<F>, advice: Vec<Column<Advice>>) -> SelectConfig {
+    pub fn configure(meta: &mut ConstraintSystem<Fp>, advice: Vec<Column<Advice>>) -> SelectConfig {
         let col_a = advice[0];
         let col_b = advice[1];
         let col_c = advice[2];
@@ -75,48 +73,65 @@ impl<F: Field> SelectChip<F> {
 
     pub fn assign(
         &self,
-        mut layouter: impl Layouter<F>,
-        commit: &Vec<Value<F>>,
-        witness: &Value<F>,
-        w_sqrt: &Value<F>,
+        mut layouter: impl Layouter<Fp>,
+        commit: &Vec<Value<Fp>>,
+        witness: &Value<Fp>,
         num_rows: usize,
-    ) -> Result<AssignedCell<F, F>, Error> {
+    ) -> Result<AssignedCell<Fp, Fp>, Error> {
         layouter.assign_region(
             || "select",
             |mut region| {
-                let mut c_cell: AssignedCell<F, F>;
+                let mut c_cell: AssignedCell<Fp, Fp>;
 
                 self.config.selector[0].enable(&mut region, 0)?;
-                self.config.selector[2].enable(&mut region, 0)?;
 
-                region.assign_advice(|| "a", self.config.advice[0], 0, || commit[0])?;
+                region.assign_advice(
+                || "a", 
+                self.config.advice[0], 
+                0, 
+                || commit[0])?;
 
-                region.assign_advice(|| "b", self.config.advice[1], 0, || *witness)?;
+                region.assign_advice(
+                || "b", 
+                self.config.advice[1], 
+                0, 
+                || *witness)?;
 
                 let c_val = commit[0].and_then(|commit| witness.map(|witness| commit - witness));
-                c_cell = region.assign_advice(|| "a-b", self.config.advice[2], 0, || c_val)?;
-
-                region.assign_advice(|| "d", self.config.advice[3], 0, || *w_sqrt)?;
+                c_cell = region.assign_advice(
+                || "a-b", 
+                self.config.advice[2], 
+                0, 
+                || c_val)?;
 
                 for row in 1..num_rows {
                     self.config.selector[1].enable(&mut region, row)?;
-                    self.config.selector[2].enable(&mut region, row)?;
 
-                    region.assign_advice(|| "a", self.config.advice[0], row, || commit[row])?;
+                    region.assign_advice(
+                    || "a", 
+                    self.config.advice[0], 
+                    row, 
+                    || commit[row])?;
 
-                    region.assign_advice(|| "b", self.config.advice[1], row, || *witness)?;
+                    region.assign_advice(
+                    || "b",
+                    self.config.advice[1], 
+                    row, 
+                    || *witness)?;
 
                     let sub = commit[row].and_then(|c| witness.map(|w| c - w));
 
                     let c_val = c_cell.value().and_then(|d| sub.map(|c| *d * c));
 
-                    c_cell =
-                        region.assign_advice(|| "product", self.config.advice[2], row, || c_val)?;
+                    c_cell = region.assign_advice(
+                    || "product", 
+                    self.config.advice[2], 
+                    row, 
+                    || c_val)?;
 
-                    region.assign_advice(|| "d", self.config.advice[3], row, || *w_sqrt)?;
                 }
 
-                region.constrain_constant(c_cell.cell(), F::ZERO)?;
+                region.constrain_constant(c_cell.cell(), Fp::ZERO)?;
 
                 return Ok(c_cell);
             },
