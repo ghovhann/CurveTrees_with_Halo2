@@ -1,5 +1,6 @@
 use ff::Field;
 //use halo2_gadgets::utilities::FieldValue;
+use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::pasta::{pallas, EqAffine, Fp};
 use halo2_proofs::plonk::{
     self, create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Assigned, BatchVerifier,
@@ -12,7 +13,6 @@ use halo2_proofs::{circuit::*, plonk::*};
 use rand_core::OsRng;
 use std::marker::PhantomData;
 use std::time::Instant;
-use halo2_proofs::arithmetic::CurveAffine;
 
 mod permissible;
 mod select;
@@ -54,7 +54,9 @@ impl Circuit<Fp> for MyCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        let chip = MyChip::construct(config);
+        let sel = config.clone();
+        let perm = config.clone();
+        let chip = MyChip::construct(config, sel.select, perm.permisable);
         chip.assign(
             layouter.namespace(|| "select"),
             &self.commits_x,
@@ -62,7 +64,7 @@ impl Circuit<Fp> for MyCircuit {
             &self.witness,
             &self.w_sqrt,
             self.k,
-            self.index
+            self.index,
         );
 
         Ok(())
@@ -72,14 +74,14 @@ impl Circuit<Fp> for MyCircuit {
 struct MyChip {
     select: SelectChip,
     permisable: PrmsChip,
-    config: MyConfig
+    config: MyConfig,
 }
 
 impl MyChip {
     fn construct(config: MyConfig, s_config: SelectConfig, p_config: PrmsConfig) -> Self {
         Self {
-            SelectChip{s_config},
-            PrmsChip{p_config},
+            select: SelectChip { config: s_config },
+            permisable: PrmsChip { config: p_config },
             config,
         }
     }
@@ -106,10 +108,11 @@ impl MyChip {
         witness: &Value<Fp>,
         y_sqrt: &Value<Fp>,
         num_rows: usize,
-        index: usize
+        index: usize,
     ) {
+        //let lay = layouter.clone();
         SelectChip::assign(&self.select, layouter, x, witness, num_rows);
-        PrmsChip::assign(&self.permisable, layouter, &x[index], &y[index], y_sqrt);
+        //PrmsChip::assign(&self.permisable, layouter, &x[index], &y[index], y_sqrt);
     }
 }
 
@@ -170,7 +173,7 @@ fn main() {
         witness: witness,
         w_sqrt: w_sqrt,
         k: iterations,
-        index
+        index,
     };
 
     let mut commitments_x: Vec<Value<Fp>> = Vec::with_capacity(iterations);
@@ -193,7 +196,7 @@ fn main() {
         witness: witness,
         w_sqrt: witness,
         k: iterations,
-        index
+        index,
     };
 
     let start_time = Instant::now();

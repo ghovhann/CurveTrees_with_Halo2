@@ -15,15 +15,13 @@ pub struct PrmsConfig {
     pub advice: [Column<Advice>; 3],
     pub selector: Selector,
 }
-pub struct PrmsChip{
-    config: PrmsConfig,
+pub struct PrmsChip {
+    pub config: PrmsConfig,
 }
 
 impl PrmsChip {
     pub fn construct(config: PrmsConfig) -> Self {
-        Self {
-            config,
-        }
+        Self { config }
     }
 
     pub fn configure(
@@ -72,23 +70,12 @@ impl PrmsChip {
             |mut region| {
                 self.config.selector.enable(&mut region, 0)?;
 
-                region.assign_advice(
-                || "a", 
-                self.config.advice[0], 
-                0, 
-                || *x)?;
+                region.assign_advice(|| "a", self.config.advice[0], 0, || *x)?;
 
-                region.assign_advice(
-                || "b", 
-                self.config.advice[1], 
-                0, 
-                || *y)?;
+                region.assign_advice(|| "b", self.config.advice[1], 0, || *y)?;
 
-                let c_cell = region.assign_advice(
-                || "sqrt(y)", 
-                self.config.advice[2], 
-                0, 
-                || *y_sqrt)?;
+                let c_cell =
+                    region.assign_advice(|| "sqrt(y)", self.config.advice[2], 0, || *y_sqrt)?;
 
                 return Ok(c_cell);
             },
