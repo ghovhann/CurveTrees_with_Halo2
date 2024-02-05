@@ -1,16 +1,9 @@
-use std::marker::PhantomData;
-//use halo2_gadgets::utilities::FieldValue;
-use halo2_proofs::pasta::{pallas, EqAffine, Fp};
-use halo2_proofs::poly::{commitment::Params, Rotation};
+use halo2_proofs::pasta::Fp;
+use halo2_proofs::poly::Rotation;
 use halo2_proofs::{circuit::*, plonk::*};
-//use halo2_proofs::pasta::{EqAffine, Fp};
-//use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
-//use rand_core::OsRng;
-//use std::time::{Instant};
 use ff::Field;
 use halo2_proofs::plonk::{
-    create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Assigned, BatchVerifier, Circuit,
-    Column, ConstraintSystem, Error, Fixed, SingleVerifier, TableColumn, VerificationStrategy,
+    Advice, Column, ConstraintSystem, Error,
 };
 
 #[derive(Debug, Clone)]

@@ -1,17 +1,13 @@
 use ff::Field;
-//use halo2_gadgets::utilities::FieldValue;
-use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::pasta::{pallas, EqAffine, Fp};
+use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::{
-    self, create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Assigned, BatchVerifier,
-    Circuit, Column, ConstraintSystem, Error, Fixed, SingleVerifier, TableColumn,
-    VerificationStrategy,
+    self, create_proof, keygen_pk, keygen_vk, verify_proof, BatchVerifier,
+    Circuit, ConstraintSystem, Error, SingleVerifier,
 };
-use halo2_proofs::poly::{commitment::Params, Rotation};
+use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
 use halo2_proofs::{circuit::*, plonk::*};
 use rand_core::OsRng;
-use std::marker::PhantomData;
 use std::time::Instant;
 
 mod permissible;
@@ -56,14 +52,19 @@ impl Circuit<Fp> for MyCircuit {
     ) -> Result<(), Error> {
         let sel = config.clone();
         let perm = config.clone();
-        let chip = MyChip::construct(config, sel.select, perm.permisable);
-        chip.assign(
+        let chip = MyChip::construct(sel.select, perm.permisable);
+        chip.assign_select(
             layouter.namespace(|| "select"),
             &self.commits_x,
-            &self.commits_y,
             &self.witness,
-            &self.w_sqrt,
             self.k,
+        );
+
+        chip.assign_perm(
+            layouter.namespace(|| "permissible"),
+            &self.commits_x,
+            &self.commits_y,
+            &self.w_sqrt,
             self.index,
         );
 
@@ -74,15 +75,14 @@ impl Circuit<Fp> for MyCircuit {
 struct MyChip {
     select: SelectChip,
     permisable: PrmsChip,
-    config: MyConfig,
 }
 
 impl MyChip {
-    fn construct(config: MyConfig, s_config: SelectConfig, p_config: PrmsConfig) -> Self {
+    fn construct(s_config: SelectConfig, p_config: PrmsConfig) -> Self {
         Self {
-            select: SelectChip { config: s_config },
-            permisable: PrmsChip { config: p_config },
-            config,
+            select: SelectChip::construct(s_config),
+            // select: SelectChip { config: s_config },
+            permisable: PrmsChip::construct(p_config),
         }
     }
 
@@ -100,19 +100,25 @@ impl MyChip {
         }
     }
 
-    pub fn assign(
+    pub fn assign_select(
         &self,
-        mut layouter: impl Layouter<Fp>,
+        layouter: impl Layouter<Fp>,
+        x: &Vec<Value<Fp>>,
+        witness: &Value<Fp>,
+        num_rows: usize,
+    ) {
+        SelectChip::assign(&self.select, layouter, x, witness, num_rows).expect("Select assignment Error");
+    }
+
+    pub fn assign_perm(
+        &self,
+        layouter: impl Layouter<Fp>,
         x: &Vec<Value<Fp>>,
         y: &Vec<Value<Fp>>,
-        witness: &Value<Fp>,
         y_sqrt: &Value<Fp>,
-        num_rows: usize,
         index: usize,
     ) {
-        //let lay = layouter.clone();
-        SelectChip::assign(&self.select, layouter, x, witness, num_rows);
-        //PrmsChip::assign(&self.permisable, layouter, &x[index], &y[index], y_sqrt);
+        PrmsChip::assign(&self.permisable, layouter, &x[index], &y[index], y_sqrt).expect("Permisiible assignment Error");
     }
 }
 
@@ -124,7 +130,6 @@ fn keygen(k: u32, empty_circuit: MyCircuit) -> (Params<EqAffine>, ProvingKey<EqA
 }
 
 fn prover(
-    k: u32,
     params: &Params<EqAffine>,
     pk: &ProvingKey<EqAffine>,
     circuit: MyCircuit,
@@ -206,7 +211,7 @@ fn main() {
     println!("Elapsed keygen time: {:?}ms", elapsed_time.as_millis());
 
     let start_time = Instant::now();
-    let proof = prover(k, &params, &pk, circuit);
+    let proof = prover(&params, &pk, circuit);
     let end_time = Instant::now();
     let elapsed_time = end_time.duration_since(start_time);
     println!("Elapsed prover time: {:?}ms", elapsed_time.as_millis());

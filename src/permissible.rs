@@ -1,13 +1,9 @@
-use ff::Field;
-//use halo2_gadgets::utilities::FieldValue;
-use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::pasta::{pallas, EqAffine, Fp};
+use halo2_proofs::pasta::Fp;
 use halo2_proofs::plonk::{
-    self, Advice, Assigned, Circuit, Column, ConstraintSystem, Error, Fixed, TableColumn,
+    self, Advice, Column, Error,
 };
-use halo2_proofs::poly::{commitment::Params, Rotation};
+use halo2_proofs::poly::Rotation;
 use halo2_proofs::{circuit::*, plonk::*};
-use std::marker::PhantomData;
 
 /// This represents an advice column at a certain row in the ConstraintSystem
 #[derive(Debug, Clone)]
@@ -47,7 +43,7 @@ impl PrmsChip {
             let b = meta.query_advice(col_b, Rotation::cur());
 
             let on_curve =
-                b.square() - a.clone().square() * a - Expression::Constant(pallas::Affine::b());
+                b.square() - a.clone().square() * a ;//- Expression::Constant(pallas::Affine::b());
 
             vec![s * on_curve]
         });
@@ -82,5 +78,3 @@ impl PrmsChip {
         )
     }
 }
-
-// fn make_permissible()

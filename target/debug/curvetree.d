@@ -1,1 +1,1 @@
-/home/hayk/projects/CurveTrees_with_Halo2/target/debug/curvetree: /home/hayk/projects/CurveTrees_with_Halo2/src/circuit.rs /home/hayk/projects/CurveTrees_with_Halo2/src/permissible.rs /home/hayk/projects/CurveTrees_with_Halo2/src/select.rs
+/Users/goharhovhannisyan/Documents/ZK/Code/CurveTrees_with_Halo2/target/debug/curvetree: /Users/goharhovhannisyan/Documents/ZK/Code/CurveTrees_with_Halo2/src/circuit.rs /Users/goharhovhannisyan/Documents/ZK/Code/CurveTrees_with_Halo2/src/permissible.rs /Users/goharhovhannisyan/Documents/ZK/Code/CurveTrees_with_Halo2/src/select.rs
