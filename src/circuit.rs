@@ -1,5 +1,6 @@
 use ff::Field;
-use halo2_proofs::pasta::{EqAffine, Fp};
+use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::pasta::{pallas, EqAffine, Fp};
 use halo2_proofs::plonk::{
     self, create_proof, keygen_pk, keygen_vk, verify_proof, BatchVerifier,
     Circuit, ConstraintSystem, Error, SingleVerifier,
@@ -50,9 +51,8 @@ impl Circuit<Fp> for MyCircuit {
         config: Self::Config,
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
-        let sel = config.clone();
-        let perm = config.clone();
-        let chip = MyChip::construct(sel.select, perm.permisable);
+        let config_clone = config.clone();
+        let chip = MyChip::construct(config_clone.select, config_clone.permisable);
         chip.assign_select(
             layouter.namespace(|| "select"),
             &self.commits_x,
@@ -81,7 +81,6 @@ impl MyChip {
     fn construct(s_config: SelectConfig, p_config: PrmsConfig) -> Self {
         Self {
             select: SelectChip::construct(s_config),
-            // select: SelectChip { config: s_config },
             permisable: PrmsChip::construct(p_config),
         }
     }
@@ -163,8 +162,12 @@ fn main() {
     let mut commitments_y: Vec<Value<Fp>> = Vec::with_capacity(iterations);
 
     for i in 0..iterations {
-        let element = i as u64;
-        commitments_y.push(Value::known(Fp::from(element)));
+        let tmp = commitments_x[i].map(|x| {
+            let y = (x.square() * x).sqrt().unwrap_or(Fp::default());    
+            y
+        });
+
+        commitments_y.push(tmp);
     }
 
     let witness = commitments_x[index].clone();

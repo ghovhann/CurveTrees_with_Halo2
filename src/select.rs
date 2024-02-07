@@ -8,7 +8,7 @@ use halo2_proofs::plonk::{
 
 #[derive(Debug, Clone)]
 pub struct SelectConfig {
-    pub advice: [Column<Advice>; 3], //try select with more columns
+    pub advice: [Column<Advice>; 3],
     pub selector: [Selector; 2],
 }
 pub struct SelectChip {

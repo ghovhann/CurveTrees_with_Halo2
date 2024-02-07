@@ -1,4 +1,5 @@
-use halo2_proofs::pasta::Fp;
+use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::pasta::{pallas, Fp};
 use halo2_proofs::plonk::{
     self, Advice, Column, Error,
 };
@@ -43,7 +44,7 @@ impl PrmsChip {
             let b = meta.query_advice(col_b, Rotation::cur());
 
             let on_curve =
-                b.square() - a.clone().square() * a ;//- Expression::Constant(pallas::Affine::b());
+                b.square() - a.clone().square() * a;// - Expression::Constant(pallas::Affine::b());
 
             vec![s * on_curve]
         });
