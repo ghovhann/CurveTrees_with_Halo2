@@ -1,9 +1,16 @@
 use ff::Field;
+use halo2_gadgets::ecc::FixedPoints;
+use halo2_gadgets::utilities::lookup_range_check::LookupRangeCheckConfig;
 use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::pasta::{pallas, EqAffine, Fp};
+use halo2_proofs::pasta::{EqAffine, Fp, pallas};
 use halo2_proofs::plonk::{
     self, create_proof, keygen_pk, keygen_vk, verify_proof, BatchVerifier,
     Circuit, ConstraintSystem, Error, SingleVerifier,
+};
+use halo2_gadgets::ecc::{
+        chip::{EccChip, EccConfig},
+        FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort, ScalarVar,
+        
 };
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
@@ -11,17 +18,39 @@ use halo2_proofs::{circuit::*, plonk::*};
 use rand_core::OsRng;
 use std::time::Instant;
 
+// use halo2_proofs::dev::MockProver;
+
 mod permissible;
 mod select;
 
 use permissible::*;
 use select::*;
 
+
+pub const FIXED_BASE_WINDOW_SIZE: usize = 3;
+pub const H: usize = 1 << FIXED_BASE_WINDOW_SIZE;
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub(crate) struct TestFixedBases;
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub(crate) struct FullWidth(pallas::Affine, &'static [(u64, [pallas::Base; H])]);
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub(crate) struct BaseField;
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub(crate) struct Short;
+
+impl FixedPoints<pallas::Affine> for TestFixedBases {
+    type FullScalar = FullWidth;
+    type ShortScalar = Short;
+    type Base = BaseField;
+}
+
 /// This represents an advice column at a certain row in the ConstraintSystem
 #[derive(Debug, Clone)]
 struct MyConfig {
     pub select: SelectConfig,
     pub permisable: PrmsConfig,
+    ecc_config: EccConfig<TestFixedBases>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -68,6 +97,10 @@ impl Circuit<Fp> for MyCircuit {
             self.index,
         );
 
+        let ecc_chip = EccChip::construct(config.ecc_config.clone());
+
+        // use the chip
+        
         Ok(())
     }
 }
@@ -93,9 +126,46 @@ impl MyChip {
         let select_config = SelectChip::configure(meta, vec![col_a, col_b, col_c]);
         let prms_config = PrmsChip::configure(meta, vec![col_a, col_b, col_d]);
 
+        let advices = [
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+            meta.advice_column(),
+        ];
+
+        for advice in advices.iter() {
+            meta.enable_equality(*advice);
+        }
+
+        let lagrange_coeffs = [
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+            meta.fixed_column(),
+        ];
+
+        meta.enable_constant(lagrange_coeffs[0]);
+
+        let table_idx = meta.lookup_table_column();
+        let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
+
+        let ecc_config =
+        EccChip::<TestFixedBases>::configure(meta, advices, lagrange_coeffs, range_check);
+
         MyConfig {
             select: select_config,
             permisable: prms_config,
+            ecc_config
         }
     }
 
@@ -147,7 +217,7 @@ fn verifier(params: &Params<EqAffine>, vk: &VerifyingKey<EqAffine>, proof: &[u8]
 }
 
 fn main() {
-    let k = 9;
+    let k = 4;
     println!("k = {k}");
     let index = 2;
 
@@ -155,15 +225,18 @@ fn main() {
     let mut commitments_x: Vec<Value<Fp>> = Vec::with_capacity(iterations);
 
     for i in 0..iterations {
-        let element = i as u64;
-        commitments_x.push(Value::known(Fp::from(element)));
+        // let element = i as u64;
+        commitments_x.push(Value::known(Fp::from(5)));
     }
 
     let mut commitments_y: Vec<Value<Fp>> = Vec::with_capacity(iterations);
 
     for i in 0..iterations {
         let tmp = commitments_x[i].map(|x| {
-            let y = (x.square() * x).sqrt().unwrap_or(Fp::default());    
+            let y = (x.square() * x + pallas::Affine::b()).sqrt().unwrap_or(Fp::default());
+            // if bool::from(y.is_odd() ^ y_lsb.is_odd()) {
+            //     y = -y;
+            // }
             y
         });
 
@@ -206,6 +279,9 @@ fn main() {
         k: iterations,
         index,
     };
+
+    // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+    // prover.assert_satisfied();
 
     let start_time = Instant::now();
     let (params, pk) = keygen(k, empty_circuit.clone());

@@ -44,7 +44,7 @@ impl PrmsChip {
             let b = meta.query_advice(col_b, Rotation::cur());
 
             let on_curve =
-                b.square() - a.clone().square() * a;// - Expression::Constant(pallas::Affine::b());
+                b.square() - a.clone().square() * a - Expression::Constant(pallas::Affine::b());
 
             vec![s * on_curve]
         });
