@@ -1,162 +1,32 @@
-use halo2_gadgets::ecc::chip::constants::*;
-use halo2_proofs::pasta::group::{Curve, Group};
-use lazy_static::lazy_static;
-use ff::{Field, PrimeField};
-use halo2_gadgets::ecc::{FixedPointBaseField, FixedPoints};
+use ff::Field;
 use halo2_gadgets::utilities::lookup_range_check::LookupRangeCheckConfig;
 use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::pasta::{pallas, EpAffine, EqAffine, Fp, Fq};
+use halo2_proofs::pasta::{pallas, EqAffine, Fp, Fq};
 use halo2_proofs::plonk::{
     self, create_proof, keygen_pk, keygen_vk, verify_proof, BatchVerifier,
     Circuit, ConstraintSystem, Error, SingleVerifier,
 };
 use halo2_gadgets::ecc::{
         chip::{EccChip, EccConfig},
-        NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort, ScalarVar, EccInstructions
-        
+        ScalarFixed      
 };
 use halo2_gadgets::ecc::FixedPoint as FPoint;
-use halo2_gadgets::ecc::chip::{BaseFieldElem, EccPoint, FixedPoint, FullScalar, ShortScalar};
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
 use halo2_proofs::{circuit::*, plonk::*};
 use rand_core::OsRng;
 use std::time::Instant;
-// use pasta_curves::{arithmetic::CurveAffine, pallas};
 
 // use halo2_proofs::dev::MockProver;
 
 mod permissible;
 mod select;
+mod generator;
 
 use permissible::*;
 use select::*;
+use generator::*;
 
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub(crate) struct TestFixedBases;
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub(crate) struct FullWidth(pallas::Affine, &'static [(u64, [pallas::Base; H])]);
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub(crate) struct BaseField;
-#[derive(Debug, Eq, PartialEq, Clone)]
-pub(crate) struct Short;
-
-lazy_static! {
-    static ref BASE: pallas::Affine = pallas::Point::generator().to_affine();
-    static ref ZS_AND_US: Vec<(u64, [pallas::Base; H])> =
-        find_zs_and_us(*BASE, NUM_WINDOWS).unwrap();
-    static ref ZS_AND_US_SHORT: Vec<(u64, [pallas::Base; H])> =
-        find_zs_and_us(*BASE, NUM_WINDOWS_SHORT).unwrap();
-}
-
-impl FullWidth {
-    pub(crate) fn from_pallas_generator() -> Self {
-        FullWidth(*BASE, &ZS_AND_US)
-    }
-
-    pub(crate) fn from_parts(
-        base: pallas::Affine,
-        zs_and_us: &'static [(u64, [pallas::Base; H])],
-    ) -> Self {
-        FullWidth(base, zs_and_us)
-    }
-}
-
-impl FixedPoint<pallas::Affine> for FullWidth {
-    type FixedScalarKind = FullScalar;
-
-    fn generator(&self) -> pallas::Affine {
-        self.0
-    }
-
-    fn u(&self) -> Vec<[[u8; 32]; H]> {
-        self.1
-            .iter()
-            .map(|(_, us)| {
-                [
-                    us[0].to_repr(),
-                    us[1].to_repr(),
-                    us[2].to_repr(),
-                    us[3].to_repr(),
-                    us[4].to_repr(),
-                    us[5].to_repr(),
-                    us[6].to_repr(),
-                    us[7].to_repr(),
-                ]
-            })
-            .collect()
-    }
-
-    fn z(&self) -> Vec<u64> {
-        self.1.iter().map(|(z, _)| *z).collect()
-    }
-}
-
-impl FixedPoint<pallas::Affine> for BaseField {
-    type FixedScalarKind = BaseFieldElem;
-
-    fn generator(&self) -> pallas::Affine {
-        *BASE
-    }
-
-    fn u(&self) -> Vec<[[u8; 32]; H]> {
-        ZS_AND_US
-            .iter()
-            .map(|(_, us)| {
-                [
-                    us[0].to_repr(),
-                    us[1].to_repr(),
-                    us[2].to_repr(),
-                    us[3].to_repr(),
-                    us[4].to_repr(),
-                    us[5].to_repr(),
-                    us[6].to_repr(),
-                    us[7].to_repr(),
-                ]
-            })
-            .collect()
-    }
-
-    fn z(&self) -> Vec<u64> {
-        ZS_AND_US.iter().map(|(z, _)| *z).collect()
-    }
-}
-
-impl FixedPoint<pallas::Affine> for Short {
-    type FixedScalarKind = ShortScalar;
-
-    fn generator(&self) -> pallas::Affine {
-        *BASE
-    }
-
-    fn u(&self) -> Vec<[[u8; 32]; H]> {
-        ZS_AND_US_SHORT
-            .iter()
-            .map(|(_, us)| {
-                [
-                    us[0].to_repr(),
-                    us[1].to_repr(),
-                    us[2].to_repr(),
-                    us[3].to_repr(),
-                    us[4].to_repr(),
-                    us[5].to_repr(),
-                    us[6].to_repr(),
-                    us[7].to_repr(),
-                ]
-            })
-            .collect()
-    }
-
-    fn z(&self) -> Vec<u64> {
-        ZS_AND_US_SHORT.iter().map(|(z, _)| *z).collect()
-    }
-}
-
-impl FixedPoints<pallas::Affine> for TestFixedBases {
-    type FullScalar = FullWidth;
-    type ShortScalar = Short;
-    type Base = BaseField;
-}
 
 /// This represents an advice column at a certain row in the ConstraintSystem
 #[derive(Debug, Clone)]
@@ -302,31 +172,26 @@ impl MyChip {
         PrmsChip::assign(&self.permisable, layouter, &x[index], &y[index], y_sqrt).expect("Permisiible assignment Error");
     }
 
-    pub fn assign_rerand<EccChip: EccInstructions<pallas::Affine, Point = EccPoint> + Clone + Eq + std::fmt::Debug>(
+    pub fn assign_rerand(
         &self,
         mut layouter: impl Layouter<Fp>,
-        ecc_chip: EccChip,
+        ecc_chip: EccChip<TestFixedBases>,
     )
     {
-        let alpha = ScalarVar::new(
-            ecc_chip.clone(), 
-            layouter.namespace(|| "alpha"), 
-            Value::known(Fq::from(0))
-            ).expect("M1");
-        let p_val = pallas::Point::random(OsRng).to_affine(); // P
-        let p = NonIdentityPoint::new(
+        let scalar = ScalarFixed::new(
             ecc_chip.clone(),
-            layouter.namespace(|| "P"),
-            Value::known(p_val),
-        ).expect("M2");
+            layouter.namespace(|| "scalar"),
+            Value::known(Fq::from(2))
+        ).expect("Couldn't witness scalar");
 
-        let res = p.mul(
-            layouter.namespace(|| "mul fixed"), 
-            alpha
-            ).expect("M3");
+        let value_commit_r = ValueCommitR;
+        let value_commit_r = FPoint::from_inner(ecc_chip, value_commit_r);
+        let _res = value_commit_r.mul(
+            layouter.namespace(|| "[rcv] ValueCommitR"), 
+            scalar
+        ).expect("Multiplication failed");
+        
 
-        // let fpoint = FPoint::from_inner(ecc_chip.clone(), );
-        // let base_point = FixedPointBaseField::from_inner(ecc_chip.clone(), BaseField);
     }
 }
 
@@ -356,14 +221,14 @@ fn verifier(params: &Params<EqAffine>, vk: &VerifyingKey<EqAffine>, proof: &[u8]
 }
 
 fn main() {
-    let k = 4;
+    let k = 11;
     println!("k = {k}");
     let index = 2;
 
     let iterations = 1 << k - 1;
     let mut commitments_x: Vec<Value<Fp>> = Vec::with_capacity(iterations);
 
-    for i in 0..iterations {
+    for _i in 0..iterations {
         // let element = i as u64;
         commitments_x.push(Value::known(Fp::from(5)));
     }

@@ -707,7 +707,6 @@ dependencies = [
  "ff",
  "halo2_gadgets",
  "halo2_proofs",
- "lazy_static",
  "pasta_curves",
  "plotters",
  "rand_core",
