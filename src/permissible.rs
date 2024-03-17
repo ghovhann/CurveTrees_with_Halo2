@@ -1,3 +1,4 @@
+use ff::Field;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::pasta::{pallas, Fp};
 use halo2_proofs::plonk::{
@@ -5,6 +6,9 @@ use halo2_proofs::plonk::{
 };
 use halo2_proofs::poly::Rotation;
 use halo2_proofs::{circuit::*, plonk::*};
+use pasta_curves::group::Curve;
+
+
 
 /// This represents an advice column at a certain row in the ConstraintSystem
 #[derive(Debug, Clone)]
@@ -77,5 +81,30 @@ impl PrmsChip {
                 return Ok(c_cell);
             },
         )
+    }
+}
+
+
+pub fn permissible_commitment(
+    c: &pallas::Point,
+    h: &pallas::Point,
+) -> (pallas::Point, u64) {
+    let mut r = 0u64;
+    let mut c_prime = *c;
+    while !is_permissible(c_prime) {
+        c_prime = (c_prime + h).into();
+        r += 1;
+    }
+    (c_prime, r)
+}
+
+pub fn is_permissible(point: pallas::Point) -> bool {
+    let y = point.to_affine().coordinates().expect("Couldn't get coordinates of a point");
+    let y = y.y();
+    if y.sqrt().is_none().into() {
+        return  false;
+    }
+    else {
+        return true;
     }
 }

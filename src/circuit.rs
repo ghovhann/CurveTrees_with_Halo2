@@ -1,4 +1,5 @@
 use ff::Field;
+use halo2_gadgets::ecc::chip::FixedPoint;
 use halo2_gadgets::utilities::lookup_range_check::LookupRangeCheckConfig;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::pasta::{pallas, EqAffine, Fp, Fq};
@@ -10,14 +11,20 @@ use halo2_gadgets::ecc::{
         chip::{EccChip, EccConfig},
         ScalarFixed      
 };
-use halo2_gadgets::ecc::FixedPoint as FPoint;
+use halo2_gadgets::ecc::{FixedPoint as FPoint, Point};
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
 use halo2_proofs::{circuit::*, plonk::*};
+use pasta_curves::arithmetic::CurveExt;
+use pasta_curves::group::Group;
+use pasta_curves::{Ep, EpAffine};
 use rand_core::OsRng;
+use rand::Rng;
 use std::time::Instant;
+use pasta_curves::group::Curve;
+use std::ops::Mul;
 
-// use halo2_proofs::dev::MockProver;
+use halo2_proofs::dev::MockProver;
 
 mod permissible;
 mod select;
@@ -33,7 +40,8 @@ use generator::*;
 struct MyConfig {
     pub select: SelectConfig,
     pub permisable: PrmsConfig,
-    ecc_config: EccConfig<TestFixedBases>,
+    pub ecc_config: EccConfig<TestFixedBases>,
+    pub instance: Column<Instance>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -42,6 +50,8 @@ struct MyCircuit {
     pub commits_y: Vec<Value<Fp>>,
     pub witness: Value<Fp>,
     pub w_sqrt: Value<Fp>,
+    pub rerand_scalar: Value<Fq>,
+    // pub rerand_pt: Ep,
     pub k: usize,
     pub index: usize,
 }
@@ -64,7 +74,7 @@ impl Circuit<Fp> for MyCircuit {
         mut layouter: impl Layouter<Fp>,
     ) -> Result<(), Error> {
         let config_clone = config.clone();
-        let chip = MyChip::construct(config_clone.select, config_clone.permisable);
+        let chip = MyChip::construct(config_clone.select, config_clone.permisable, config.clone());
         chip.assign_select(
             layouter.namespace(|| "select"),
             &self.commits_x,
@@ -81,7 +91,7 @@ impl Circuit<Fp> for MyCircuit {
         );
 
         let ecc_chip = EccChip::construct(config.ecc_config.clone());
-        chip.assign_rerand(layouter, ecc_chip.clone());
+        chip.assign_rerand(layouter, ecc_chip.clone(), self.rerand_scalar, self.commits_x[self.index], self.commits_y[self.index]);
 
         Ok(())
     }
@@ -90,13 +100,15 @@ impl Circuit<Fp> for MyCircuit {
 struct MyChip {
     select: SelectChip,
     permisable: PrmsChip,
+    config: MyConfig
 }
 
 impl MyChip {
-    fn construct(s_config: SelectConfig, p_config: PrmsConfig) -> Self {
+    fn construct(s_config: SelectConfig, p_config: PrmsConfig, config: MyConfig) -> Self {
         Self {
             select: SelectChip::construct(s_config),
             permisable: PrmsChip::construct(p_config),
+            config,
         }
     }
 
@@ -144,10 +156,14 @@ impl MyChip {
         let ecc_config =
         EccChip::<TestFixedBases>::configure(meta, advices, lagrange_coeffs, range_check);
 
+        let instance = meta.instance_column();
+        meta.enable_equality(instance);
+
         MyConfig {
             select: select_config,
             permisable: prms_config,
-            ecc_config
+            ecc_config,
+            instance
         }
     }
 
@@ -176,21 +192,42 @@ impl MyChip {
         &self,
         mut layouter: impl Layouter<Fp>,
         ecc_chip: EccChip<TestFixedBases>,
+        rerand_scalar: Value<Fq>,
+        x_child: Value<Fp>,
+        y_child: Value<Fp>,
     )
-    {
+    {   
         let scalar = ScalarFixed::new(
             ecc_chip.clone(),
             layouter.namespace(|| "scalar"),
-            Value::known(Fq::from(2))
+            rerand_scalar,
         ).expect("Couldn't witness scalar");
 
         let value_commit_r = ValueCommitR;
-        let value_commit_r = FPoint::from_inner(ecc_chip, value_commit_r);
-        let _res = value_commit_r.mul(
-            layouter.namespace(|| "[rcv] ValueCommitR"), 
+        let value_commit_r = FPoint::from_inner(ecc_chip.clone(), value_commit_r);
+        let res = value_commit_r.mul(
+            layouter.namespace(|| "rerand_scalar mul"), 
             scalar
         ).expect("Multiplication failed");
+
+        let mut tmp_x = Fp::zero();
+        x_child.map(|v| tmp_x = v);
+        let mut tmp_y = Fp::zero();
+        y_child.map(|v| tmp_y = v);
+        let tmp = EpAffine::from_xy(tmp_x, tmp_y).expect("Couldn't construct point from x,y");
+
+        let pt = Point::new(
+            ecc_chip, 
+            layouter.namespace(|| "witness non identity point"), 
+            Value::known(tmp),
+        ).expect("Couldn't witness a Point");
+
+        let rerand = res.0.add(
+            layouter.namespace(|| "rerandomized commitment"), 
+            &pt).expect("Couldn't perform addition");
         
+        layouter.constrain_instance(rerand.inner().x().cell(), self.config.instance, 0).expect("Couldn't constrain instance");
+        layouter.constrain_instance(rerand.inner().y().cell(), self.config.instance, 1).expect("Couldn't constrain instance");
 
     }
 }
@@ -206,59 +243,84 @@ fn prover(
     params: &Params<EqAffine>,
     pk: &ProvingKey<EqAffine>,
     circuit: MyCircuit,
+    public_input: &[&[Fp]],
 ) -> Vec<u8> {
     let rng = OsRng;
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-    create_proof(params, pk, &[circuit], &[&[]], rng, &mut transcript)
+    create_proof(params, pk, &[circuit], &[public_input], rng, &mut transcript)
         .expect("proof generation should not fail");
     transcript.finalize()
 }
 
-fn verifier(params: &Params<EqAffine>, vk: &VerifyingKey<EqAffine>, proof: &[u8]) {
+fn verifier(
+    params: &Params<EqAffine>, 
+    vk: &VerifyingKey<EqAffine>, 
+    proof: &[u8], 
+    public_input: &[&[Fp]],
+    ) {
     let strategy = SingleVerifier::new(params);
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(proof);
-    assert!(verify_proof(params, vk, strategy, &[&[]], &mut transcript).is_ok());
+    assert!(verify_proof(params, vk, strategy, &[public_input], &mut transcript).is_ok());
 }
 
 fn main() {
-    let k = 11;
-    println!("k = {k}");
+
+    let k = 9;
+    println!("k = {}", k.clone()-1);
     let index = 2;
 
     let iterations = 1 << k - 1;
-    let mut commitments_x: Vec<Value<Fp>> = Vec::with_capacity(iterations);
+
+    let hasher = pallas::Point::hash_to_curve("CT_COMMITMENT");
+    let mut commitments: Vec<pallas::Point> = Vec::with_capacity(iterations);
 
     for _i in 0..iterations {
-        // let element = i as u64;
-        commitments_x.push(Value::known(Fp::from(5)));
+        let mut my_array: [u8; 11] = [0; 11];
+
+        let mut rng = rand::thread_rng();
+        for i in 0..11 {
+            my_array[i] = rng.gen();
+        }
+        let c = hasher(&my_array);
+        let (c, _) = permissible_commitment(&c, &pallas::Point::generator());
+        commitments.push(c);
+    }
+
+    let mut commitments_x: Vec<Value<Fp>> = Vec::with_capacity(iterations);
+
+    for i in 0..iterations {
+        let pt = commitments[i].to_affine().coordinates().expect("Couldn't get coordinates of a point"); 
+        commitments_x.push(Value::known(*pt.x()));
     }
 
     let mut commitments_y: Vec<Value<Fp>> = Vec::with_capacity(iterations);
 
     for i in 0..iterations {
-        let tmp = commitments_x[i].map(|x| {
-            let y = (x.square() * x + pallas::Affine::b()).sqrt().unwrap_or(Fp::default());
-            // if bool::from(y.is_odd() ^ y_lsb.is_odd()) {
-            //     y = -y;
-            // }
-            y
-        });
-
-        commitments_y.push(tmp);
+        let pt = commitments[i].to_affine().coordinates().expect("Couldn't get coordinates of a point"); 
+        commitments_y.push(Value::known(*pt.y()));
     }
 
     let witness = commitments_x[index].clone();
     let witness_y = commitments_y[index].clone();
+    let gen = ValueCommitR::generator(&ValueCommitR);
+    let generator = Ep::from(gen);
+    let rerand_scalar = pallas::Scalar::from_raw([1, 2, 3, 4]);
+    let rerand_pt = commitments[index].clone() + generator * rerand_scalar;
+    let rerand_scalar = Value::known(rerand_scalar);
     let w_sqrt: Value<Option<Fp>> = witness_y.map(|v| v.sqrt().into());
     let w_sqrt = w_sqrt.map(|opt_fp| opt_fp.unwrap_or_default());
+
 
     let circuit = MyCircuit {
         commits_x: commitments_x,
         commits_y: commitments_y,
-        witness: witness,
-        w_sqrt: w_sqrt,
+        witness,
+        w_sqrt,
+        rerand_scalar,
+        // rerand_pt,
         k: iterations,
         index,
+
     };
 
     let mut commitments_x: Vec<Value<Fp>> = Vec::with_capacity(iterations);
@@ -274,17 +336,24 @@ fn main() {
     }
 
     let witness = Value::unknown();
+    let scalar: Value<Fq> = Value::unknown();
+    // let pt: Ep = pallas::Point::generator();
 
     let empty_circuit = MyCircuit {
         commits_x: commitments_x,
         commits_y: commitments_y,
         witness: witness,
         w_sqrt: witness,
+        rerand_scalar: scalar,
+        // rerand_pt: pt,
         k: iterations,
         index,
     };
 
-    // let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+    let tmp = (rerand_pt).to_affine().coordinates().expect("Couldn't get coordinates of a point"); 
+    let public_input = &[*tmp.x(), *tmp.y()];
+    
+    // let prover = MockProver::run(k, &circuit, public_input).unwrap();
     // prover.assert_satisfied();
 
     let start_time = Instant::now();
@@ -294,20 +363,20 @@ fn main() {
     println!("Elapsed keygen time: {:?}ms", elapsed_time.as_millis());
 
     let start_time = Instant::now();
-    let proof = prover(&params, &pk, circuit);
+    let proof = prover(&params, &pk, circuit, &[public_input]);
     let end_time = Instant::now();
     let elapsed_time = end_time.duration_since(start_time);
     println!("Elapsed prover time: {:?}ms", elapsed_time.as_millis());
 
     let start_time = Instant::now();
-    verifier(&params, pk.get_vk(), &proof);
+    verifier(&params, pk.get_vk(), &proof, &[public_input]);
     let end_time = Instant::now();
     let elapsed_time = end_time.duration_since(start_time);
     println!("Elapsed verifier time: {:?}ms", elapsed_time.as_millis());
 
     let mut batch: BatchVerifier<EqAffine> = BatchVerifier::new();
     for _ in 0..8 {
-        batch.add_proof(vec![vec![]], proof.clone());
+        batch.add_proof(vec![vec![vec![*tmp.x(), *tmp.y()]]], proof.clone());
     }
 
     let start_time = Instant::now();
