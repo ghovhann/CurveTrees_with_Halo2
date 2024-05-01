@@ -1,1 +1,0 @@
-for<'a, 'b, 'c, 'd, 'e> fn(&Params<_>, &'a halo2_proofs::plonk::VerifyingKey<_>, _, &'b [&'c [&'d [<_ as PrimeCurveAffine>::Scalar]]], &'e mut _) -> Result<<_ as VerificationStrategy<'_, _>>::Output, halo2_proofs::plonk::Error> {halo2_proofs::plonk::verify_proof::<'_, _, _, _, _>}

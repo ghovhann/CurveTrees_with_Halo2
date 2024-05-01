@@ -1,1 +1,0 @@
-for<'a, 'b> fn(&'a ark_ec::short_weierstrass::Affine<_>, &'b ark_ec::short_weierstrass::Affine<_>) -> (ark_ec::short_weierstrass::Affine<_>, <_ as CurveConfig>::ScalarField) {permissible::permissible_commitment::<_, _, _>}
