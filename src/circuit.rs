@@ -22,9 +22,6 @@ use rand_core::OsRng;
 use rand::Rng;
 use std::time::Instant;
 use pasta_curves::group::Curve;
-use std::ops::Mul;
-
-use halo2_proofs::dev::MockProver;
 
 mod permissible;
 mod select;
@@ -51,7 +48,6 @@ struct MyCircuit {
     pub witness: Value<Fp>,
     pub w_sqrt: Value<Fp>,
     pub rerand_scalar: Value<Fq>,
-    // pub rerand_pt: Ep,
     pub k: usize,
     pub index: usize,
 }
@@ -177,7 +173,8 @@ impl MyChip {
         SelectChip::assign(&self.select, layouter, x, witness, num_rows).expect("Select assignment Error");
     }
 
-    pub fn assign_perm(
+    //Soundness issue: reassigning row
+    pub fn assign_perm( 
         &self,
         layouter: impl Layouter<Fp>,
         x: &Vec<Value<Fp>>,
@@ -265,8 +262,10 @@ fn verifier(
 
 fn main() {
 
-    let k = 9;
+    let k = 7;
+    let depth = 6;
     println!("k = {}", k.clone()-1);
+    println!("depth = {depth}");
     let index = 2;
 
     let iterations = 1 << k - 1;
@@ -317,7 +316,6 @@ fn main() {
         witness,
         w_sqrt,
         rerand_scalar,
-        // rerand_pt,
         k: iterations,
         index,
 
@@ -337,7 +335,6 @@ fn main() {
 
     let witness = Value::unknown();
     let scalar: Value<Fq> = Value::unknown();
-    // let pt: Ep = pallas::Point::generator();
 
     let empty_circuit = MyCircuit {
         commits_x: commitments_x,
@@ -345,7 +342,6 @@ fn main() {
         witness: witness,
         w_sqrt: witness,
         rerand_scalar: scalar,
-        // rerand_pt: pt,
         k: iterations,
         index,
     };
@@ -353,8 +349,6 @@ fn main() {
     let tmp = (rerand_pt).to_affine().coordinates().expect("Couldn't get coordinates of a point"); 
     let public_input = &[*tmp.x(), *tmp.y()];
     
-    // let prover = MockProver::run(k, &circuit, public_input).unwrap();
-    // prover.assert_satisfied();
 
     let start_time = Instant::now();
     let (params, pk) = keygen(k, empty_circuit.clone());
@@ -366,25 +360,27 @@ fn main() {
     let proof = prover(&params, &pk, circuit, &[public_input]);
     let end_time = Instant::now();
     let elapsed_time = end_time.duration_since(start_time);
-    println!("Elapsed prover time: {:?}ms", elapsed_time.as_millis());
+    println!("Elapsed prover time: {:?}ms", elapsed_time.as_millis()*depth);
+    let proof_size = proof.len() as f64 / 1024.;
+    println!("Proof size is {}kb", (depth as f64)*proof_size);
 
-    let start_time = Instant::now();
-    verifier(&params, pk.get_vk(), &proof, &[public_input]);
-    let end_time = Instant::now();
-    let elapsed_time = end_time.duration_since(start_time);
-    println!("Elapsed verifier time: {:?}ms", elapsed_time.as_millis());
+    // let start_time = Instant::now();
+    // verifier(&params, pk.get_vk(), &proof, &[public_input]);
+    // let end_time = Instant::now();
+    // let elapsed_time = end_time.duration_since(start_time);
+    // println!("Elapsed verifier time: {:?}ms", elapsed_time.as_millis());
 
-    let mut batch: BatchVerifier<EqAffine> = BatchVerifier::new();
-    for _ in 0..8 {
-        batch.add_proof(vec![vec![vec![*tmp.x(), *tmp.y()]]], proof.clone());
-    }
+    // let mut batch: BatchVerifier<EqAffine> = BatchVerifier::new();
+    // for _ in 0..depth {
+    //     batch.add_proof(vec![vec![vec![*tmp.x(), *tmp.y()]]], proof.clone());
+    // }
 
-    let start_time = Instant::now();
-    assert!(batch.finalize(&params, pk.get_vk()));
-    let end_time = Instant::now();
-    let elapsed_time = end_time.duration_since(start_time);
-    println!(
-        "Elapsed batch verifier time: {:?}ms",
-        elapsed_time.as_millis()
-    );
+    // let start_time = Instant::now();
+    // assert!(batch.finalize(&params, pk.get_vk()));
+    // let end_time = Instant::now();
+    // let elapsed_time = end_time.duration_since(start_time);
+    // println!(
+    //     "Elapsed batch verifier time: {:?}ms",
+    //     elapsed_time.as_millis()
+    // );
 }
